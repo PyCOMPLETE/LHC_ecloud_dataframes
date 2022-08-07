@@ -27,7 +27,7 @@ from rich.panel import Panel
                                          
 from loguru import logger                
 logger.remove()                          
-logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{level}</blue> | <level>{message}</level>")
+logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{level:>4}</blue> | <level>{message}</level>")
 
 class EcloudDataframes(UserDict):
     bunch_intensity_threshold = 0.15e11
@@ -39,14 +39,17 @@ class EcloudDataframes(UserDict):
     bct = {}
     fbct = {}
     bqm_bunchlengths = {}
-    blacklist = [7923, 7969, 8033, 8073]
+    blacklist = [7923, 7969, 8033, 8073] #bad points in BQM
+
+    tags = ["stable_beams", "end_of_squeeze"]
+    timestamp_names = ["t_start_STABLE", "t_stop_SQUEEZE"]
 
     def __init__(self, dataframe_pickle=None):
         if dataframe_pickle is not None:
             logger.info(f"Loading {dataframe_pickle}")
             self.data = pickle.load(open(dataframe_pickle,'rb'))
         else:
-            self.data["stable_beams"] = pd.DataFrame()
+            self.data = {tag : pd.DataFrame() for tag in self.tags}
         
         self.dict_fill_bmodes = self.get_fill_bmodes()
 
@@ -60,7 +63,6 @@ class EcloudDataframes(UserDict):
 
 	
     def update(self):
-
 
         saved_fills = list(self.data["stable_beams"].index)
 
@@ -82,16 +84,20 @@ class EcloudDataframes(UserDict):
         self.pretty_print_list(self.blacklist)
         logger.info(f"{len(stable_beam_fills)} fills with stable beams: ")
         self.pretty_print_list(stable_beam_fills)
-        logger.info(f"{len(stable_beam_fills_to_process)} of which not in the dataframes: ")
+        logger.info(f"{len(stable_beam_fills_to_process)} of which are not in the dataframes: ")
         self.pretty_print_list(stable_beam_fills_to_process)
 
         for fill in stable_beam_fills_to_process:
+            keys = list(self.fill_dict.keys())
+            for key in keys:
+                del self.fill_dict[key]
             del self.fill_dict ## to delete data from previous fills
             self.fill_dict = {} ## to delete data from previous fills
             fill_info = self.dict_fill_bmodes[fill] 
             logger.info(f"Fill {fill}...")
             df_rows = self.get_fill_dataframe_rows(int(fill))
-            self.data[tag] = pd.concat([self.data[tag], df_rows[tag]])
+            for tag in df_rows.keys():
+                self.data[tag] = pd.concat([self.data[tag], df_rows[tag]])
             
             if self.save:
                 pickle.dump(self.data, open(self.saved_pickle_name, "wb"))
@@ -105,23 +111,30 @@ class EcloudDataframes(UserDict):
             logger.info(f"{the_list[ii+chunk_size:]}")
 
     def get_fill_dataframe_rows(self, fill):
-        dataframe_row = {}
+        dataframes_rows = {}
         self.update_fill_data(fill)
-        tag = "stable_beams"
-        dataframe_row[tag] = {}
-        t_start = self.dict_fill_bmodes[fill]['t_startfill']
-        timestamp = self.dict_fill_bmodes[fill]['t_start_STABLE']
-        dataframe_row[tag]["timestamp"] = timestamp
-        dataframe_row[tag].update( self.get_beam_data(timestamp) )
-        dataframe_row[tag].update( self.get_heatload_data(timestamp) )
+        for tag, time_var in zip(self.tags, self.timestamp_names):
+            
+            df_row = {}
+            if time_var not in self.dict_fill_bmodes[fill].keys():
+                logger.warning(f"\t{tag}/{time_var} not found in {fill}.")
+                continue
+            else:
+                logger.info(f"\tRecording at {tag}.")
 
-        ## from dict to pandas DataFrame
-        df_row = dataframe_row[tag]
-        df = pd.DataFrame()
-        for key in df_row.keys():
-            series = pd.Series([df_row[key]], index=[int(fill)])
-            df = pd.concat([df, series.rename(key)], axis=1)
-        return {tag : df}
+            timestamp = self.dict_fill_bmodes[fill][time_var]
+            df_row["timestamp"] = timestamp
+            df_row.update( self.get_beam_data(timestamp) )
+            df_row.update( self.get_heatload_data(timestamp) )
+
+            ## from dict to pandas DataFrame
+            df = pd.DataFrame()
+            for key in df_row.keys():
+                series = pd.Series([df_row[key]], index=[int(fill)])
+                df = pd.concat([df, series.rename(key)], axis=1)
+            dataframes_rows[tag] = df
+
+        return dataframes_rows
          
     def get_beam_data(self, timestamp):
         logger.info("\tExtracting beam data...")
@@ -159,12 +172,8 @@ class EcloudDataframes(UserDict):
         dataframe_row = {}
         
         # Modelled Impedance and Synchrotron Radiation
-        impedance_var = self.fill_dict["imp_arc_wm"]
-        impedance_var.values = impedance_var.values[0]
-        sr_var = self.fill_dict["sr_arc_wm"]
-        sr_var.values = sr_var.values[0]
-        impedance_hl_per_m = impedance_var.nearest_older_sample(timestamp)
-        sr_hl_per_m = sr_var.nearest_older_sample(timestamp)
+        impedance_hl_per_m = self.impedance_var.nearest_older_sample(timestamp)
+        sr_hl_per_m = self.sr_var.nearest_older_sample(timestamp)
   
         dataframe_row["impedance_hl_per_m"] = impedance_hl_per_m
         dataframe_row["impedance_hl_halfcell"] = impedance_hl_per_m * self.halfcell_length
@@ -172,9 +181,8 @@ class EcloudDataframes(UserDict):
         dataframe_row["sr_hl_halfcell"] = sr_hl_per_m * self.halfcell_length
         
         ## Measured heat loads: 1) halfcell by halfcell and 2) averages over halfcells of sectors
-        heatloads = SetOfHomogeneousNumericVariables(variable_list=self.heatload_varlist, timber_variables=self.fill_dict)
-        for hl_var in heatloads.variable_list:
-            timber_var = heatloads.timber_variables[hl_var]
+        for hl_var in self.heatloads.variable_list:
+            timber_var = self.heatloads.timber_variables[hl_var]
             dataframe_row[hl_var] = timber_var.nearest_older_sample(timestamp)
             
         return dataframe_row
@@ -203,8 +211,14 @@ class EcloudDataframes(UserDict):
         self.fill_dict.update(CalsVariables_from_h5(data_folder_fill +
             '/fill_cell_by_cell_heatload_data_h5s/cell_by_cell_heatloads_fill_%d.h5'%fill))
         logger.info(f"\tInitializing BCT, FBCT, BQM with LHCMeasurementTools...")
-        
-        heatloads = SetOfHomogeneousNumericVariables(variable_list=self.heatload_varlist, timber_variables=self.fill_dict)
+
+        #correct impedance vars shapes        
+        self.impedance_var = self.fill_dict["imp_arc_wm"]
+        self.impedance_var.values = self.impedance_var.values[0]
+        self.sr_var = self.fill_dict["sr_arc_wm"]
+        self.sr_var.values = self.sr_var.values[0]
+
+        self.heatloads = SetOfHomogeneousNumericVariables(variable_list=self.heatload_varlist, timber_variables=self.fill_dict)
         for beam in [1,2]:
             self.bct[beam] = BCT.BCT(self.fill_dict, beam=beam)
             self.fbct[beam] = FBCT.FBCT(self.fill_dict, beam=beam)
@@ -212,4 +226,5 @@ class EcloudDataframes(UserDict):
 
         logger.info(f"\tFinished loading.")
 
+        
        
