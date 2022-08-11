@@ -24,9 +24,9 @@ from rich.live import Live
 from rich.table import Table
 from rich.panel import Panel
 
-                                         
-from loguru import logger                
-logger.remove()                          
+
+from loguru import logger
+logger.remove()
 logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{level:>4}</blue> | <level>{message}</level>")
 
 class EcloudDataframes(UserDict):
@@ -35,11 +35,12 @@ class EcloudDataframes(UserDict):
 
     save = True
     saved_pickle_name = "LHC_ecloud_dataframes_2022.pkl"
-    
+
     bct = {}
     fbct = {}
     bqm_bunchlengths = {}
-    blacklist = [7923, 7969, 8033, 8073] #bad points in BQM
+    #blacklist = [7923, 7969, 8033, 8073] #bad points in BQM
+    blacklist = [8114] # 8114: fill number changed during stable beams.
 
     tags = ["stable_beams", "end_of_squeeze"]
     timestamp_names = ["t_start_STABLE", "t_stop_SQUEEZE"]
@@ -160,6 +161,7 @@ class EcloudDataframes(UserDict):
 
             dataframe_row[f"bunch_length_b{beam}"] = bunch_lengths
             filled_bunch_lengths = bunch_lengths[filled_slots]
+            breakpoint()
             dataframe_row[f"bunch_length_b{beam}_mean"] = np.mean(filled_bunch_lengths)
             dataframe_row[f"bunch_length_b{beam}_std"] = np.std(filled_bunch_lengths)
             dataframe_row[f"bunch_length_b{beam}_max"] = np.max(filled_bunch_lengths)
