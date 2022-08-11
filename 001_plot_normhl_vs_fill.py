@@ -62,9 +62,9 @@ for axt in [ax02, ax12]:
 
 ### plot intensities
 for axt in [ax00, ax10]:
-    axt.plot(df["intensity_b1"], ".", ms=10, color='b', label="Beam 1", zorder=2)
-    axt.plot(df["intensity_b2"], ".", ms=10, color='r', label="Beam 2", zorder=1)
-    axt.set_ylabel("Intensity [p+]")
+    axt.plot(df["bunch_intensity_b1_mean"]/1.e11, ".", ms=10, color='b', label="Beam 1", zorder=2)
+    axt.plot(df["bunch_intensity_b2_mean"]/1.e11, ".", ms=10, color='r', label="Beam 2", zorder=1)
+    axt.set_ylabel("Bunch\n intensity [10$^{11}$p+]")
     axt.grid(1)
     axt.legend(bbox_to_anchor=(1.1, -0.8),  loc='upper left', prop={'size':14})
 for axt in [ax01, ax11]:
