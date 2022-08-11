@@ -161,7 +161,6 @@ class EcloudDataframes(UserDict):
 
             dataframe_row[f"bunch_length_b{beam}"] = bunch_lengths
             filled_bunch_lengths = bunch_lengths[filled_slots]
-            breakpoint()
             dataframe_row[f"bunch_length_b{beam}_mean"] = np.mean(filled_bunch_lengths)
             dataframe_row[f"bunch_length_b{beam}_std"] = np.std(filled_bunch_lengths)
             dataframe_row[f"bunch_length_b{beam}_max"] = np.max(filled_bunch_lengths)
