@@ -68,10 +68,11 @@ class EcloudDataframes(UserDict):
             if fill in self.blacklist: continue
             fill_info = self.dict_fill_bmodes[fill]
             fill_keys = fill_info.keys()
-            if fill_info["flag_complete"] and "t_start_STABLE" in fill_keys:
-                stable_beam_fills.append(fill)
-                if fill not in saved_fills:
-                    stable_beam_fills_to_process.append(fill)
+            if fill_info["flag_complete"]:
+                if "t_start_STABLE" in fill_keys and "t_start_RAMP" in fill_keys:
+                    stable_beam_fills.append(fill)
+                    if fill not in saved_fills:
+                        stable_beam_fills_to_process.append(fill)
 
         logger.info(f"{len(self.blacklist)} Blacklisted fills: ")
         self.pretty_print_list(self.blacklist)
