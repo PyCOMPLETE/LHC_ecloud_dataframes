@@ -5,7 +5,7 @@ import pickle
 
 from collections import UserDict
 
-from LHCMeasurementTools.TimberManager import CalsVariables_from_h5 
+from LHCMeasurementTools.TimberManager import CalsVariables_from_h5
 import LHCMeasurementTools.TimestampHelpers as TH
 import LHCMeasurementTools.LHC_BCT as BCT
 import LHCMeasurementTools.LHC_FBCT as FBCT
@@ -17,13 +17,6 @@ from LHCMeasurementTools.LHC_Fills import Fills_Info
 from LHCMeasurementTools.LHC_Fill_LDB_Query import load_fill_dict_from_json
 from LHCMeasurementTools.SetOfHomogeneousVariables import SetOfHomogeneousNumericVariables
 from data_folders import data_folder_list
-
-from rich.progress import track, Progress
-from rich.progress import TextColumn, BarColumn, TimeElapsedColumn, MofNCompleteColumn, TaskProgressColumn, TimeRemainingColumn
-from rich.live import Live
-from rich.table import Table
-from rich.panel import Panel
-
 
 from loguru import logger
 logger.remove()
