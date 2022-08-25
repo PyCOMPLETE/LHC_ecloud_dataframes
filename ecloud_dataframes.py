@@ -20,7 +20,7 @@ from data_folders import data_folder_list
 
 from loguru import logger
 logger.remove()
-logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{level:>4}</blue> | <level>{message}</level>")
+logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{level: >.4}</blue> | <level>{message}</level>")
 
 class EcloudDataframes(UserDict):
     bunch_intensity_threshold = 0.15e11
@@ -35,7 +35,7 @@ class EcloudDataframes(UserDict):
     #blacklist = [7923, 7969, 8033, 8073] #bad points in BQM
     blacklist = [8114] # 8114: fill number changed during stable beams.
 
-    tags = ["stable_beams", "end_of_squeeze"]
+    tags = ["integrated_heatload", "stable_beams", "end_of_squeeze"]
     timestamp_names = ["t_start_STABLE", "t_stop_SQUEEZE"]
 
     def __init__(self, dataframe_pickle=None):
@@ -44,7 +44,7 @@ class EcloudDataframes(UserDict):
             self.data = pickle.load(open(dataframe_pickle,'rb'))
         else:
             self.data = {tag : pd.DataFrame() for tag in self.tags}
-        
+
         self.dict_fill_bmodes = self.get_fill_bmodes()
 
         #cell by cell heatload variables
@@ -55,19 +55,18 @@ class EcloudDataframes(UserDict):
 
         self.fill_dict = {}
 
-	
+
     def update(self):
 
         saved_fills = list(self.data["stable_beams"].index)
 
         fills = list(self.dict_fill_bmodes.keys())
-        tag = "stable_beams"
-        
+
         stable_beam_fills = []
         stable_beam_fills_to_process = []
         for fill in fills:
             if fill in self.blacklist: continue
-            fill_info = self.dict_fill_bmodes[fill] 
+            fill_info = self.dict_fill_bmodes[fill]
             fill_keys = fill_info.keys()
             if fill_info["flag_complete"] and "t_start_STABLE" in fill_keys:
                 stable_beam_fills.append(fill)
@@ -87,12 +86,13 @@ class EcloudDataframes(UserDict):
                 del self.fill_dict[key]
             del self.fill_dict ## to delete data from previous fills
             self.fill_dict = {} ## to delete data from previous fills
-            fill_info = self.dict_fill_bmodes[fill] 
+
             logger.info(f"Fill {fill}...")
             df_rows = self.get_fill_dataframe_rows(int(fill))
+
             for tag in df_rows.keys():
                 self.data[tag] = pd.concat([self.data[tag], df_rows[tag]])
-            
+
             if self.save:
                 pickle.dump(self.data, open(self.saved_pickle_name, "wb"))
 
@@ -104,22 +104,43 @@ class EcloudDataframes(UserDict):
                 logger.info(f"{the_list[ii:ii+chunk_size]}")
             logger.info(f"{the_list[ii+chunk_size:]}")
 
+    def get_timestamp_from_tag(self, tag, bmodes):
+            if tag == "stable_beams":
+                time_var  = "t_start_STABLE"
+                if time_var in bmodes.keys():
+                    timestamp = bmodes[time_var]
+                else:
+                    timestamp = -1
+            elif tag == "end_of_squeeze":
+                time_var  = "t_stop_SQUEEZE"
+                if time_var in bmodes.keys():
+                    timestamp = bmodes[time_var]
+                else:
+                    timestamp = -1
+            else:
+                raise Exception(f"Unknown timestamp tag: \"{tag}\"")
+            return timestamp
+
+
     def get_fill_dataframe_rows(self, fill):
         dataframes_rows = {}
         self.update_fill_data(fill)
-        for tag, time_var in zip(self.tags, self.timestamp_names):
-            
-            df_row = {}
-            if time_var not in self.dict_fill_bmodes[fill].keys():
-                logger.warning(f"\t{tag}/{time_var} not found in {fill}.")
-                continue
-            else:
-                logger.info(f"\tRecording at {tag}.")
 
-            timestamp = self.dict_fill_bmodes[fill][time_var]
-            df_row["timestamp"] = timestamp
-            df_row.update( self.get_beam_data(timestamp) )
-            df_row.update( self.get_heatload_data(timestamp) )
+        for tag in self.tags:
+            if tag == "integrated_heatload":
+                df_row = self.get_integrated_heatload_data()
+            else:
+                df_row = {}
+                timestamp = self.get_timestamp_from_tag(tag, self.dict_fill_bmodes[fill])
+                if timestamp < 0:
+                    logger.warning(f"\t{tag} not found in {fill}.")
+                    continue
+                else:
+                    logger.info(f"\tRecording at {tag}.")
+
+                df_row["timestamp"] = timestamp
+                df_row.update( self.get_beam_data(timestamp) )
+                df_row.update( self.get_heatload_data(timestamp) )
 
             ## from dict to pandas DataFrame
             df = pd.DataFrame()
@@ -129,20 +150,60 @@ class EcloudDataframes(UserDict):
             dataframes_rows[tag] = df
 
         return dataframes_rows
-         
+
+    def get_integrated_heatload_data(self):
+        """Integrated heat load is calculated for each cell and for all times
+        where there are at least 2 bunches in one of the beams.
+        """
+
+        logger.info("\tExtracting integrated heat load...")
+        beam = 1
+        t_starts = []
+        t_stops = []
+        for beam in [1,2]:
+            t_stamps = self.fbct[beam].t_stamps
+            bint = self.fbct[beam].bint
+            bith = self.bunch_intensity_threshold
+            for ii in range(len(t_stamps)):
+                n_bunches = np.sum(bint[ii] > bith)
+                if n_bunches > 2:
+                    t_starts.append(t_stamps[ii])
+                    break
+            for ii in range(len(t_stamps)-1, 0, -1):
+                n_bunches = np.sum(bint[ii] > bith)
+                if n_bunches > 2:
+                    t_stops.append(t_stamps[ii])
+                    break
+        if len(t_starts) == 0 or len(t_stops) == 0:
+            raise Exception("Cannot find bunches for calculation of integrated heat load")
+        t_start = np.min(t_starts)
+        t_stop = np.max(t_stops)
+
+        dataframe_row = {}
+        for hl_var in self.heatloads.variable_list:
+            timber_var = self.heatloads.timber_variables[hl_var]
+            mask = np.logical_and(timber_var.t_stamps > t_start, timber_var.t_stamps < t_stop)
+            t_hl = timber_var.t_stamps[mask]
+            hl = timber_var.values[mask]
+            integrated_hl = np.trapz(hl, x=t_hl)
+            dataframe_row[hl_var] = integrated_hl
+
+        return dataframe_row
+
+
     def get_beam_data(self, timestamp):
         logger.info("\tExtracting beam data...")
         dataframe_row = {}
-        
+
         for beam in [1,2]:
             ## BCT
             dataframe_row[f"intensity_b{beam}"] = self.bct[beam].nearest_older_sample(timestamp)
-        
+
             ## FBCT bunch intensities
             bunch_intensities = self.fbct[beam].nearest_older_sample(timestamp)
             filled_slots = bunch_intensities > self.bunch_intensity_threshold
             n_bunches = len(bunch_intensities[filled_slots])
-  
+
             dataframe_row[f"n_bunches_b{beam}"] = n_bunches
             dataframe_row[f"bunch_intensity_b{beam}"] = bunch_intensities
             dataframe_row[f"filled_slots_b{beam}"] = filled_slots
@@ -158,27 +219,27 @@ class EcloudDataframes(UserDict):
             dataframe_row[f"bunch_length_b{beam}_std"] = np.std(filled_bunch_lengths)
             dataframe_row[f"bunch_length_b{beam}_max"] = np.max(filled_bunch_lengths)
             dataframe_row[f"bunch_length_b{beam}_min"] = np.min(filled_bunch_lengths)
-            
+
         return dataframe_row
 
     def get_heatload_data(self, timestamp):
         logger.info("\tExtracting heat load data...")
         dataframe_row = {}
-        
+
         # Modelled Impedance and Synchrotron Radiation
         impedance_hl_per_m = self.impedance_var.nearest_older_sample(timestamp)
         sr_hl_per_m = self.sr_var.nearest_older_sample(timestamp)
-  
+
         dataframe_row["impedance_hl_per_m"] = impedance_hl_per_m
         dataframe_row["impedance_hl_halfcell"] = impedance_hl_per_m * self.halfcell_length
         dataframe_row["sr_hl_per_m"] = sr_hl_per_m
         dataframe_row["sr_hl_halfcell"] = sr_hl_per_m * self.halfcell_length
-        
+
         ## Measured heat loads: 1) halfcell by halfcell and 2) averages over halfcells of sectors
         for hl_var in self.heatloads.variable_list:
             timber_var = self.heatloads.timber_variables[hl_var]
             dataframe_row[hl_var] = timber_var.nearest_older_sample(timestamp)
-            
+
         return dataframe_row
 
     def get_fill_bmodes(self):
@@ -220,5 +281,4 @@ class EcloudDataframes(UserDict):
 
         logger.info(f"\tFinished loading.")
 
-        
-       
+
