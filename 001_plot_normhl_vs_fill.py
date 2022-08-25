@@ -5,12 +5,19 @@ import LHCMeasurementTools.LHC_Heatloads as HL
 
 import numpy as np
 import matplotlib.pyplot as plt
+import pendulum
+import argparse
 
 from matplotlib import rc
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--noblock', dest='plot_block', action='store_false')
+args = parser.parse_args()
 
 fontsize = 16
 rc('font', **{'family': 'sans-serif', 'sans-serif': ['arial'], 'size': fontsize})
 
+date = pendulum.now("Europe/Paris").to_cookie_string()
 ecloud_dfs = EcloudDataframes(dataframe_pickle="LHC_ecloud_dataframes_2022.pkl")
 
 df = ecloud_dfs["end_of_squeeze"]
@@ -36,7 +43,7 @@ ax02.set_xlabel("Fill number")
 ax02.set_ylabel("Normalized\n heat load [$10^{-13}$ W/p+]")
 ax02.set_ylim(0, 6)
 ax02.legend(bbox_to_anchor=(1.1, 1.05),  loc='upper left', prop={'size':14})
-fig0.subplots_adjust(left=.1, right=.76, hspace=.28, top=.95)
+fig0.subplots_adjust(left=.1, right=.76, hspace=.28, top=.89)
 ax02.grid()
 
 
@@ -53,7 +60,7 @@ ax12.set_xlabel("Fill number")
 ax12.set_ylabel("Heat load [W/hc]")
 ax12.set_ylim(0, 230)
 ax12.legend(bbox_to_anchor=(1.1, 1.05),  loc='upper left', prop={'size':14})
-fig1.subplots_adjust(left=.1, right=.76, hspace=.28, top=.95)
+fig1.subplots_adjust(left=.1, right=.76, hspace=.28, top=.89)
 ax12.grid()
 
 
@@ -103,6 +110,9 @@ for axt in [ax01, ax11]:
 #     plot_arrow(start, end, 205, ax2, wscale=35)
 #     ax2.text((start+end)/2., 215, label, horizontalalignment="center", verticalalignment="center")
 
+fig0.suptitle(f"Last update: {date}")
+fig1.suptitle(f"Last update: {date}")
+
 fig0.savefig("norm_hl_vs_fill.png")
 fig1.savefig("hl_vs_fill.png")
-plt.show()
+plt.show(block=args.plot_block)
