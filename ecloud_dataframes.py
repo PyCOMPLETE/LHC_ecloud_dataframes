@@ -35,7 +35,7 @@ class EcloudDataframes(UserDict):
     #blacklist = [7923, 7969, 8033, 8073] #bad points in BQM
     blacklist = [8114] # 8114: fill number changed during stable beams.
 
-    tags = ["integrated_heatload", "stable_beams", "end_of_squeeze"]
+    tags = ["integrated_heatload", "injection", "end_of_squeeze", "stable_beams"]
     timestamp_names = ["t_start_STABLE", "t_stop_SQUEEZE"]
 
     def __init__(self, dataframe_pickle=None):
@@ -113,6 +113,12 @@ class EcloudDataframes(UserDict):
                     timestamp = -1
             elif tag == "end_of_squeeze":
                 time_var  = "t_stop_SQUEEZE"
+                if time_var in bmodes.keys():
+                    timestamp = bmodes[time_var]
+                else:
+                    timestamp = -1
+            elif tag == "injection":
+                time_var  = "t_stop_PRERAMP"
                 if time_var in bmodes.keys():
                     timestamp = bmodes[time_var]
                 else:
